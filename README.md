@@ -36,6 +36,11 @@ Each rule can define:
 
 SignalDeck also pauses idle-time accumulation while media is actively playing, including common Windows media sessions exposed by browsers and media apps.
 
+## Downloads
+
+- [Latest release](https://github.com/MohammadYahya871/signal-deck/releases/latest)
+- [All releases](https://github.com/MohammadYahya871/signal-deck/releases)
+
 ## Current Features
 
 - multi-rule configuration
@@ -53,7 +58,7 @@ SignalDeck also pauses idle-time accumulation while media is actively playing, i
 
 Run:
 
-- [SignalDeckSetup.exe](D:\work\tools\SignalDeck\dist\installer\SignalDeckSetup.exe)
+- [Download the latest installer from GitHub Releases](https://github.com/MohammadYahya871/signal-deck/releases/latest)
 
 The installer:
 
@@ -139,6 +144,11 @@ The installer is upgrade-aware:
 ## GitHub Releases
 
 The recommended way to publish installer versions is through GitHub Releases, not by committing `dist/` into the repository.
+
+Useful links:
+
+- [Latest release](https://github.com/MohammadYahya871/signal-deck/releases/latest)
+- [Release history](https://github.com/MohammadYahya871/signal-deck/releases)
 
 SignalDeck includes automation for that flow:
 
