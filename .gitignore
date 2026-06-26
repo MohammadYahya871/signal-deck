@@ -1,0 +1,11 @@
+bin/
+obj/
+.vs/
+dist/publish/
+dist/installer/
+*.user
+*.suo
+*.pdb
+*.log
+*.tmp
+*.cache

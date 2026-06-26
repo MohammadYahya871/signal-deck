@@ -1,0 +1,167 @@
+# SignalDeck
+
+SignalDeck is a Windows desktop app for event-driven audio playback.
+
+It lets you create playback rules that answer three practical questions:
+
+- what audio should play
+- which output device should play it
+- when it should play
+
+SignalDeck was originally designed for personal "return to PC" moments like:
+
+> play "welcome aboard captain, all systems online" on my main speakers when I come back to my computer
+
+It has since been shaped into a broader rule-based automation tool for Windows audio events.
+
+## What It Does
+
+SignalDeck can create playback rules for events such as:
+
+- returning after idle
+- Windows sign-in
+- launching selected apps
+- session lock
+- session unlock
+- resume from sleep
+
+Each rule can define:
+
+- a local audio file
+- a specific playback device
+- a playback volume
+- a trigger type
+- trigger-specific settings
+- a cooldown to avoid repeated playback
+
+SignalDeck also pauses idle-time accumulation while media is actively playing, including common Windows media sessions exposed by browsers and media apps.
+
+## Current Features
+
+- multi-rule configuration
+- per-rule output device selection
+- per-rule volume control
+- audio preview from the editor
+- tray app behavior
+- launch at sign-in support
+- installer with upgrade support
+- idle timing that ignores active media playback
+
+## Installation
+
+### Option 1: Install From The Packaged Installer
+
+Run:
+
+- [SignalDeckSetup.exe](D:\work\tools\SignalDeck\dist\installer\SignalDeckSetup.exe)
+
+The installer:
+
+- installs SignalDeck into `C:\Program Files\SignalDeck`
+- registers it as a startup app by default
+- supports in-place upgrades for future versions
+
+### Option 2: Run The Packaged Build Directly
+
+You can also run:
+
+- [SignalDeck.exe](D:\work\tools\SignalDeck\dist\publish\SignalDeck.exe)
+
+This is useful for quick local testing, but the installer is the recommended path for normal use.
+
+## How To Use
+
+1. Open SignalDeck.
+2. Select a rule from the left side, or create one with `Add Rule`.
+3. Set the `Audio file`.
+4. Choose the `Output device`.
+5. Adjust the `Volume`.
+6. Choose the `Trigger type`.
+7. Fill in any trigger-specific settings:
+   - `Idle threshold` for `Return After Idle`
+   - `Watched apps` for `When Selected App Starts`
+8. Set a `Cooldown` if needed.
+9. Use `Preview` to test the sound with the selected device and volume.
+10. Click `Save All`.
+
+### Typical Example
+
+To create a "welcome back" rule:
+
+- choose your spoken greeting audio file
+- choose your main speakers
+- set the trigger to `Return After Idle`
+- set the idle threshold to something like `5` minutes
+- optionally set a cooldown so it does not repeat too often
+
+## Building From Source
+
+Requirements:
+
+- Windows
+- .NET 8 SDK
+
+Build:
+
+```powershell
+dotnet build D:\work\tools\SignalDeck\SignalDeck.sln -c Release
+```
+
+## Packaging
+
+SignalDeck includes:
+
+- app icon: `assets/SignalDeck.ico`
+- installer script: `installer/SignalDeck.iss`
+- installer build script: `installer/build-installer.ps1`
+
+Build the installer:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\work\tools\SignalDeck\installer\build-installer.ps1
+```
+
+Output artifacts:
+
+- packaged app: `dist\publish\SignalDeck.exe`
+- installer: `dist\installer\SignalDeckSetup.exe`
+
+## Update Behavior
+
+The installer is upgrade-aware:
+
+- it reuses the same application identity
+- it preserves the previous install directory
+- it preserves previous task choices
+- it can update an existing install in place
+- it attempts to close `SignalDeck.exe` during upgrades
+
+## Project Structure
+
+- `src/SignalDeck.App`
+  WPF app, tray behavior, UI, view models
+- `src/SignalDeck.Core`
+  shared models, interfaces, orchestration logic
+- `src/SignalDeck.Infrastructure`
+  Windows integrations, playback, persistence, triggers
+- `installer/`
+  Inno Setup packaging
+- `assets/`
+  icon and third-party notices
+- `docs/`
+  product notes and design docs
+
+## Notes
+
+- SignalDeck is intentionally Windows-specific.
+- Some playback detection behavior depends on what Windows exposes through audio sessions and system media sessions.
+- For mainstream browsers and media apps, this gives much better idle detection than relying on keyboard and mouse inactivity alone.
+
+## License And Third-Party Assets
+
+The current app icon is based on the Microsoft Fluent UI System Icons project.
+
+See:
+
+- [THIRD-PARTY-NOTICES.txt](D:\work\tools\SignalDeck\assets\THIRD-PARTY-NOTICES.txt)
+- [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons)
