@@ -31,6 +31,7 @@ public sealed class MainWindowViewModel : ObservableObject
         _settingsStore = settingsStore;
         _startupRegistrationService = startupRegistrationService;
         _coordinator = coordinator;
+        _coordinator.ActivityLogged += OnCoordinatorActivityLogged;
 
         TriggerTypes =
         [
@@ -41,10 +42,19 @@ public sealed class MainWindowViewModel : ObservableObject
             new TriggerTypeOption(TriggerType.SessionUnlock, "When Session Unlocks"),
             new TriggerTypeOption(TriggerType.ResumeFromSleep, "When Windows Resumes")
         ];
+
+        DeviceFallbackOptions =
+        [
+            new DeviceFallbackOption(DeviceFallbackMode.Skip, "Skip playback if device is missing"),
+            new DeviceFallbackOption(DeviceFallbackMode.UseDefaultDevice, "Use the default output device")
+        ];
+
         AddRuleCommand = new RelayCommand(AddRule);
+        DuplicateRuleCommand = new RelayCommand(DuplicateSelectedRule);
         RemoveRuleCommand = new RelayCommand(RemoveSelectedRule);
         BrowseAudioCommand = new RelayCommand(BrowseAudioFileForSelectedRule);
         PreviewAudioCommand = new RelayCommand(async () => await PreviewSelectedRuleAsync());
+        TestRuleCommand = new RelayCommand(async () => await TestSelectedRuleAsync());
         SaveCommand = new RelayCommand(async () => await SaveAsync());
         RefreshDevicesCommand = new RelayCommand(LoadDevices);
     }
@@ -53,15 +63,23 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public ObservableCollection<RuleEditorViewModel> Rules { get; } = [];
 
+    public ObservableCollection<ActivityLogItemViewModel> ActivityLogEntries { get; } = [];
+
     public IReadOnlyList<TriggerTypeOption> TriggerTypes { get; }
 
+    public IReadOnlyList<DeviceFallbackOption> DeviceFallbackOptions { get; }
+
     public ICommand AddRuleCommand { get; }
+
+    public ICommand DuplicateRuleCommand { get; }
 
     public ICommand RemoveRuleCommand { get; }
 
     public ICommand BrowseAudioCommand { get; }
 
     public ICommand PreviewAudioCommand { get; }
+
+    public ICommand TestRuleCommand { get; }
 
     public ICommand SaveCommand { get; }
 
@@ -98,6 +116,7 @@ public sealed class MainWindowViewModel : ObservableObject
 
         LaunchAtSignIn = _settings.LaunchAtSignIn;
         SelectedRule = Rules.FirstOrDefault();
+        AddActivity("SignalDeck", "Session ready.", true);
         return Task.CompletedTask;
     }
 
@@ -129,6 +148,22 @@ public sealed class MainWindowViewModel : ObservableObject
         Rules.Add(newRule);
         SelectedRule = newRule;
         StatusMessage = "New rule added.";
+        AddActivity(newRule.Name, "Rule created.", true);
+    }
+
+    private void DuplicateSelectedRule()
+    {
+        if (SelectedRule is null)
+        {
+            StatusMessage = "Select a rule to duplicate.";
+            return;
+        }
+
+        var clone = SelectedRule.Clone(Devices);
+        Rules.Add(clone);
+        SelectedRule = clone;
+        StatusMessage = $"Duplicated rule \"{clone.Name}\".";
+        AddActivity(clone.Name, "Rule duplicated.", true);
     }
 
     private void RemoveSelectedRule()
@@ -152,6 +187,7 @@ public sealed class MainWindowViewModel : ObservableObject
         }
 
         StatusMessage = $"Removed rule \"{ruleToRemove.Name}\".";
+        AddActivity(ruleToRemove.Name, "Rule removed.", true);
     }
 
     private void BrowseAudioFileForSelectedRule()
@@ -171,14 +207,20 @@ public sealed class MainWindowViewModel : ObservableObject
         if (dialog.ShowDialog() == true)
         {
             SelectedRule.AudioFilePath = dialog.FileName;
+            StatusMessage = "Audio file selected.";
         }
     }
 
     private async Task SaveAsync()
     {
-        if (Rules.Any(rule => rule.SelectedDevice is null))
+        var validationErrors = Rules
+            .SelectMany(rule => rule.GetValidationIssues().Select(issue => $"{rule.Name}: {issue}"))
+            .ToList();
+
+        if (validationErrors.Count > 0)
         {
-            StatusMessage = "Every rule needs an output device before saving.";
+            StatusMessage = validationErrors[0];
+            AddActivity("Validation", validationErrors[0], false);
             return;
         }
 
@@ -192,6 +234,7 @@ public sealed class MainWindowViewModel : ObservableObject
         _startupRegistrationService.SetEnabled(LaunchAtSignIn);
         _coordinator.ApplySettings(_settings);
         StatusMessage = "SignalDeck settings saved.";
+        AddActivity("SignalDeck", "Settings saved successfully.", true);
     }
 
     private async Task PreviewSelectedRuleAsync()
@@ -205,30 +248,77 @@ public sealed class MainWindowViewModel : ObservableObject
         if (SelectedRule.SelectedDevice is null)
         {
             StatusMessage = "Choose an output device before previewing.";
+            AddActivity(SelectedRule.Name, "Preview blocked: no output device selected.", false);
             return;
         }
 
         if (string.IsNullOrWhiteSpace(SelectedRule.AudioFilePath))
         {
             StatusMessage = "Choose an audio file before previewing.";
+            AddActivity(SelectedRule.Name, "Preview blocked: no audio file selected.", false);
             return;
         }
 
         if (!File.Exists(SelectedRule.AudioFilePath))
         {
             StatusMessage = "The selected audio file could not be found.";
+            AddActivity(SelectedRule.Name, "Preview blocked: audio file is missing.", false);
             return;
         }
 
         try
         {
             StatusMessage = "Playing preview...";
-            await _audioPlaybackService.PlayAsync(SelectedRule.ToModel().Playback);
-            StatusMessage = "Preview finished.";
+            var result = await _audioPlaybackService.PlayAsync(SelectedRule.ToModel().Playback);
+            StatusMessage = result.Succeeded ? "Preview finished." : result.Message;
+            AddActivity(SelectedRule.Name, $"Preview: {result.Message}", result.Succeeded);
         }
         catch
         {
             StatusMessage = "Preview failed. Check the audio file and output device.";
+            AddActivity(SelectedRule.Name, "Preview failed. Check the audio file and output device.", false);
+        }
+    }
+
+    private async Task TestSelectedRuleAsync()
+    {
+        if (SelectedRule is null)
+        {
+            StatusMessage = "Select a rule to test.";
+            return;
+        }
+
+        var issues = SelectedRule.GetValidationIssues();
+        if (issues.Count > 0)
+        {
+            StatusMessage = issues[0];
+            AddActivity(SelectedRule.Name, $"Test blocked: {issues[0]}", false);
+            return;
+        }
+
+        StatusMessage = "Testing rule...";
+        await _coordinator.TestRuleAsync(SelectedRule.ToModel());
+        StatusMessage = "Rule test finished.";
+    }
+
+    private void OnCoordinatorActivityLogged(object? sender, ActivityLogEntry e)
+    {
+        AddActivity(e.RuleName, e.Message, e.IsSuccess, e.OccurredAt);
+    }
+
+    private void AddActivity(string ruleName, string message, bool isSuccess, DateTimeOffset? occurredAt = null)
+    {
+        ActivityLogEntries.Insert(0, new ActivityLogItemViewModel
+        {
+            Timestamp = (occurredAt ?? DateTimeOffset.Now).ToLocalTime().ToString("HH:mm:ss"),
+            RuleName = ruleName,
+            Message = message,
+            IsSuccess = isSuccess
+        });
+
+        while (ActivityLogEntries.Count > 30)
+        {
+            ActivityLogEntries.RemoveAt(ActivityLogEntries.Count - 1);
         }
     }
 
@@ -256,7 +346,8 @@ public sealed class MainWindowViewModel : ObservableObject
                 },
                 Playback = new PlaybackSettings
                 {
-                    Volume = 0.45f
+                    Volume = 0.45f,
+                    DeviceFallbackMode = DeviceFallbackMode.Skip
                 }
             });
         }

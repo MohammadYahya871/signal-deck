@@ -9,4 +9,6 @@ public sealed class PlaybackSettings
     public string OutputDeviceNameSnapshot { get; set; } = string.Empty;
 
     public float Volume { get; set; } = 0.45f;
+
+    public DeviceFallbackMode DeviceFallbackMode { get; set; } = DeviceFallbackMode.Skip;
 }

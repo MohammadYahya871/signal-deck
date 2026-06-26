@@ -16,6 +16,8 @@ public sealed class SignalDeckCoordinator : IDisposable
     private readonly Dictionary<Guid, DateTimeOffset> _lastPlaybackStartedAt = [];
     private bool _started;
 
+    public event EventHandler<ActivityLogEntry>? ActivityLogged;
+
     public SignalDeckCoordinator(
         IIdleMonitor idleMonitor,
         IAppLaunchMonitor appLaunchMonitor,
@@ -172,31 +174,79 @@ public sealed class SignalDeckCoordinator : IDisposable
 
     private async Task TryPlayRuleAsync(SignalRule rule)
     {
+        await TryPlayRuleAsync(rule, ignoreCooldown: false, activityPrefix: null);
+    }
+
+    public async Task TestRuleAsync(SignalRule rule, CancellationToken cancellationToken = default)
+    {
+        await TryPlayRuleAsync(rule, ignoreCooldown: true, activityPrefix: "Test");
+    }
+
+    private async Task TryPlayRuleAsync(
+        SignalRule rule,
+        bool ignoreCooldown,
+        string? activityPrefix,
+        CancellationToken cancellationToken = default)
+    {
         if (string.IsNullOrWhiteSpace(rule.Playback.AudioFilePath))
         {
+            PublishActivity(rule.Name, BuildMessage(activityPrefix, "Skipped: no audio file configured."), false);
             return;
         }
 
         await _playbackLock.WaitAsync();
         try
         {
-            if (rule.Cooldown.Enabled &&
+            if (!ignoreCooldown &&
+                rule.Cooldown.Enabled &&
                 _lastPlaybackStartedAt.TryGetValue(rule.Id, out var lastPlaybackStartedAt))
             {
                 var elapsed = _timeProvider.GetUtcNow() - lastPlaybackStartedAt;
                 if (elapsed < TimeSpan.FromSeconds(rule.Cooldown.Seconds))
                 {
+                    PublishActivity(rule.Name, BuildMessage(activityPrefix, "Skipped: cooldown active."), false);
                     return;
                 }
             }
 
             _lastPlaybackStartedAt[rule.Id] = _timeProvider.GetUtcNow();
-            await _audioPlaybackService.PlayAsync(rule.Playback);
+            var result = await _audioPlaybackService.PlayAsync(rule.Playback, cancellationToken);
+            PublishActivity(rule.Name, BuildPlaybackMessage(activityPrefix, result), result.Succeeded);
+        }
+        catch (OperationCanceledException)
+        {
+            PublishActivity(rule.Name, BuildMessage(activityPrefix, "Canceled."), false);
+        }
+        catch (Exception ex)
+        {
+            PublishActivity(rule.Name, BuildMessage(activityPrefix, $"Failed: {ex.Message}"), false);
         }
         finally
         {
             _playbackLock.Release();
         }
+    }
+
+    private string BuildPlaybackMessage(string? prefix, PlaybackAttemptResult result)
+    {
+        var message = result.DeviceNameUsed is { Length: > 0 }
+            ? $"{result.Message} Device: {result.DeviceNameUsed}."
+            : result.Message;
+        return BuildMessage(prefix, message);
+    }
+
+    private static string BuildMessage(string? prefix, string message) =>
+        string.IsNullOrWhiteSpace(prefix) ? message : $"{prefix}: {message}";
+
+    private void PublishActivity(string ruleName, string message, bool isSuccess)
+    {
+        ActivityLogged?.Invoke(this, new ActivityLogEntry
+        {
+            OccurredAt = _timeProvider.GetUtcNow(),
+            RuleName = ruleName,
+            Message = message,
+            IsSuccess = isSuccess
+        });
     }
 
     private static string NormalizeProcessName(string? processName)

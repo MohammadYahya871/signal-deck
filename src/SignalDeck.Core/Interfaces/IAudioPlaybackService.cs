@@ -4,5 +4,5 @@ namespace SignalDeck.Core.Interfaces;
 
 public interface IAudioPlaybackService
 {
-    Task PlayAsync(PlaybackSettings playbackSettings, CancellationToken cancellationToken = default);
+    Task<PlaybackAttemptResult> PlayAsync(PlaybackSettings playbackSettings, CancellationToken cancellationToken = default);
 }

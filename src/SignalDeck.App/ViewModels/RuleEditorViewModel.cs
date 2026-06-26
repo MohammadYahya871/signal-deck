@@ -1,3 +1,4 @@
+using System.IO;
 using SignalDeck.Core.Models;
 
 namespace SignalDeck.App.ViewModels;
@@ -13,6 +14,7 @@ public sealed class RuleEditorViewModel : ObservableObject
     private int _idleThresholdMinutes = 5;
     private int _cooldownMinutes = 10;
     private string _appProcessNamesText = string.Empty;
+    private DeviceFallbackMode _deviceFallbackMode = DeviceFallbackMode.Skip;
 
     public Guid Id { get; set; } = Guid.NewGuid();
 
@@ -25,7 +27,7 @@ public sealed class RuleEditorViewModel : ObservableObject
         {
             if (SetProperty(ref _name, value))
             {
-                OnPropertyChanged(nameof(DisplayName));
+                RaiseDerivedState();
             }
         }
     }
@@ -37,7 +39,7 @@ public sealed class RuleEditorViewModel : ObservableObject
         {
             if (SetProperty(ref _isEnabled, value))
             {
-                OnPropertyChanged(nameof(DisplayName));
+                RaiseDerivedState();
             }
         }
     }
@@ -45,19 +47,37 @@ public sealed class RuleEditorViewModel : ObservableObject
     public string AudioFilePath
     {
         get => _audioFilePath;
-        set => SetProperty(ref _audioFilePath, value);
+        set
+        {
+            if (SetProperty(ref _audioFilePath, value))
+            {
+                RaiseDerivedState();
+            }
+        }
     }
 
     public AudioOutputDevice? SelectedDevice
     {
         get => _selectedDevice;
-        set => SetProperty(ref _selectedDevice, value);
+        set
+        {
+            if (SetProperty(ref _selectedDevice, value))
+            {
+                RaiseDerivedState();
+            }
+        }
     }
 
     public int VolumePercent
     {
         get => _volumePercent;
-        set => SetProperty(ref _volumePercent, value);
+        set
+        {
+            if (SetProperty(ref _volumePercent, value))
+            {
+                RaiseDerivedState();
+            }
+        }
     }
 
     public TriggerType TriggerType
@@ -67,10 +87,9 @@ public sealed class RuleEditorViewModel : ObservableObject
         {
             if (SetProperty(ref _triggerType, value))
             {
+                RaiseDerivedState();
                 OnPropertyChanged(nameof(IsReturnAfterIdleTrigger));
                 OnPropertyChanged(nameof(IsAppLaunchTrigger));
-                OnPropertyChanged(nameof(TriggerSummary));
-                OnPropertyChanged(nameof(DisplayName));
             }
         }
     }
@@ -82,7 +101,7 @@ public sealed class RuleEditorViewModel : ObservableObject
         {
             if (SetProperty(ref _idleThresholdMinutes, value))
             {
-                OnPropertyChanged(nameof(TriggerSummary));
+                RaiseDerivedState();
             }
         }
     }
@@ -90,7 +109,13 @@ public sealed class RuleEditorViewModel : ObservableObject
     public int CooldownMinutes
     {
         get => _cooldownMinutes;
-        set => SetProperty(ref _cooldownMinutes, value);
+        set
+        {
+            if (SetProperty(ref _cooldownMinutes, value))
+            {
+                RaiseDerivedState();
+            }
+        }
     }
 
     public string AppProcessNamesText
@@ -100,7 +125,19 @@ public sealed class RuleEditorViewModel : ObservableObject
         {
             if (SetProperty(ref _appProcessNamesText, value))
             {
-                OnPropertyChanged(nameof(TriggerSummary));
+                RaiseDerivedState();
+            }
+        }
+    }
+
+    public DeviceFallbackMode DeviceFallbackMode
+    {
+        get => _deviceFallbackMode;
+        set
+        {
+            if (SetProperty(ref _deviceFallbackMode, value))
+            {
+                RaiseDerivedState();
             }
         }
     }
@@ -120,6 +157,32 @@ public sealed class RuleEditorViewModel : ObservableObject
         _ => TriggerType.ToString()
     };
 
+    public string PlaybackSummary
+    {
+        get
+        {
+            var device = SelectedDevice?.Name ?? "No device selected";
+            var file = string.IsNullOrWhiteSpace(AudioFilePath) ? "No audio selected" : Path.GetFileName(AudioFilePath);
+            return $"{file} on {device} at {VolumePercent}%";
+        }
+    }
+
+    public string StatusText
+    {
+        get
+        {
+            if (!IsEnabled)
+            {
+                return "Disabled";
+            }
+
+            var issues = GetValidationIssues();
+            return issues.Count == 0 ? "Ready" : issues[0];
+        }
+    }
+
+    public bool IsReady => GetValidationIssues().Count == 0;
+
     public string DisplayName => $"{(IsEnabled ? string.Empty : "[Off] ")}{(string.IsNullOrWhiteSpace(Name) ? "Untitled rule" : Name)}";
 
     public SignalRule ToModel()
@@ -134,7 +197,8 @@ public sealed class RuleEditorViewModel : ObservableObject
                 AudioFilePath = AudioFilePath.Trim(),
                 OutputDeviceId = SelectedDevice?.Id ?? string.Empty,
                 OutputDeviceNameSnapshot = SelectedDevice?.Name ?? string.Empty,
-                Volume = Math.Clamp(VolumePercent / 100f, 0f, 1f)
+                Volume = Math.Clamp(VolumePercent / 100f, 0f, 1f),
+                DeviceFallbackMode = DeviceFallbackMode
             },
             Trigger = new TriggerSettings
             {
@@ -162,6 +226,7 @@ public sealed class RuleEditorViewModel : ObservableObject
             IsEnabled = rule.Enabled,
             AudioFilePath = rule.Playback.AudioFilePath,
             VolumePercent = (int)Math.Round(rule.Playback.Volume * 100),
+            DeviceFallbackMode = rule.Playback.DeviceFallbackMode,
             TriggerType = rule.Trigger.Type,
             IdleThresholdMinutes = Math.Max(1, rule.Trigger.IdleThresholdSeconds / 60),
             CooldownMinutes = Math.Max(0, rule.Cooldown.Seconds / 60),
@@ -186,6 +251,56 @@ public sealed class RuleEditorViewModel : ObservableObject
             ?? devices.FirstOrDefault();
     }
 
+    public RuleEditorViewModel Clone(IReadOnlyCollection<AudioOutputDevice> devices)
+    {
+        var clone = FromModel(ToModel(), devices);
+        clone.Id = Guid.NewGuid();
+        clone.CreatedAt = DateTimeOffset.UtcNow;
+        clone.Name = $"{Name} copy";
+        return clone;
+    }
+
+    public IReadOnlyList<string> GetValidationIssues()
+    {
+        var issues = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(Name))
+        {
+            issues.Add("Rule name is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(AudioFilePath))
+        {
+            issues.Add("Audio file is required.");
+        }
+        else if (!File.Exists(AudioFilePath))
+        {
+            issues.Add("Audio file is missing.");
+        }
+
+        if (SelectedDevice is null)
+        {
+            issues.Add("Output device is required.");
+        }
+
+        if (TriggerType == TriggerType.ReturnAfterIdle && IdleThresholdMinutes < 1)
+        {
+            issues.Add("Idle threshold must be at least 1 minute.");
+        }
+
+        if (TriggerType == TriggerType.AppLaunch && ParseProcessNames(AppProcessNamesText).Count == 0)
+        {
+            issues.Add("Add at least one watched app.");
+        }
+
+        if (CooldownMinutes < 0)
+        {
+            issues.Add("Cooldown cannot be negative.");
+        }
+
+        return issues;
+    }
+
     private static List<string> ParseProcessNames(string input)
     {
         return input
@@ -201,5 +316,14 @@ public sealed class RuleEditorViewModel : ObservableObject
     {
         var count = ParseProcessNames(AppProcessNamesText).Count;
         return count > 0 ? $" ({count} app{(count == 1 ? string.Empty : "s")})" : string.Empty;
+    }
+
+    private void RaiseDerivedState()
+    {
+        OnPropertyChanged(nameof(DisplayName));
+        OnPropertyChanged(nameof(TriggerSummary));
+        OnPropertyChanged(nameof(PlaybackSummary));
+        OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(IsReady));
     }
 }
