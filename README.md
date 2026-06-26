@@ -124,7 +124,7 @@ powershell -ExecutionPolicy Bypass -File D:\work\tools\SignalDeck\installer\buil
 Output artifacts:
 
 - packaged app: `dist\publish\SignalDeck.exe`
-- installer: `dist\installer\SignalDeckSetup.exe`
+- installer: `dist\installer\SignalDeckSetup-<version>.exe`
 
 ## Update Behavior
 
@@ -135,6 +135,51 @@ The installer is upgrade-aware:
 - it preserves previous task choices
 - it can update an existing install in place
 - it attempts to close `SignalDeck.exe` during upgrades
+
+## GitHub Releases
+
+The recommended way to publish installer versions is through GitHub Releases, not by committing `dist/` into the repository.
+
+SignalDeck includes automation for that flow:
+
+- local release prep script: `scripts/new-release.ps1`
+- GitHub Actions workflow: `.github/workflows/release-installer.yml`
+
+### How The Automated Release Flow Works
+
+1. Update the app version and create a release commit + git tag locally.
+2. Push `main` and the new version tag to GitHub.
+3. GitHub Actions builds the installer.
+4. GitHub Actions creates a GitHub Release for that tag.
+5. Only the versioned installer is uploaded as the release asset.
+
+### One-Time Setup
+
+1. Create the GitHub repository.
+2. Add your SSH public key to GitHub.
+3. Push this local repository to the GitHub remote.
+4. Make sure GitHub Actions are enabled for the repo.
+
+### Create A New Release
+
+Run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\work\tools\SignalDeck\scripts\new-release.ps1 -Version 0.3.0
+```
+
+Then push:
+
+```powershell
+git -C D:\work\tools\SignalDeck push Origin main
+git -C D:\work\tools\SignalDeck push Origin v0.3.0
+```
+
+After the tag is pushed, GitHub Actions will publish:
+
+- `SignalDeckSetup-0.3.0.exe`
+
+to the repo's Releases page automatically.
 
 ## Project Structure
 

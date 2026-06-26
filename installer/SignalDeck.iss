@@ -2,6 +2,9 @@
 #ifndef MyAppVersion
   #define MyAppVersion "0.2.0"
 #endif
+#ifndef InstallerBaseName
+  #define InstallerBaseName "SignalDeckSetup"
+#endif
 #ifndef PublishDir
   #error "PublishDir must be provided to the script."
 #endif
@@ -22,7 +25,7 @@ DefaultDirName=C:\Program Files\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir={#OutputDir}
-OutputBaseFilename=SignalDeckSetup
+OutputBaseFilename={#InstallerBaseName}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern

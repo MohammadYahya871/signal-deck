@@ -13,15 +13,23 @@ $licensePath = Join-Path $root "assets\THIRD-PARTY-NOTICES.txt"
 $innoScript = Join-Path $root "installer\SignalDeck.iss"
 $projectXml = [xml](Get-Content $appProject)
 $appVersion = $projectXml.Project.PropertyGroup.Version | Select-Object -First 1
+$targetFramework = $projectXml.Project.PropertyGroup.TargetFramework | Select-Object -First 1
+$installerBaseName = "SignalDeckSetup-$appVersion"
 
 if ([string]::IsNullOrWhiteSpace($appVersion)) {
     throw "Could not determine app version from SignalDeck.App.csproj."
 }
 
+if ([string]::IsNullOrWhiteSpace($targetFramework)) {
+    throw "Could not determine target framework from SignalDeck.App.csproj."
+}
+
 New-Item -ItemType Directory -Force -Path $publishDir, $outputDir | Out-Null
+Get-ChildItem $outputDir -Filter "SignalDeckSetup*.exe" -ErrorAction SilentlyContinue | Remove-Item -Force
 
 dotnet publish $appProject `
     -c $Configuration `
+    -f $targetFramework `
     -r win-x64 `
     --self-contained true `
     /p:PublishSingleFile=true `
@@ -48,6 +56,7 @@ if (-not $isccPath) {
 
 & $isccPath `
     "/DMyAppVersion=$appVersion" `
+    "/DInstallerBaseName=$installerBaseName" `
     "/DPublishDir=$publishDir" `
     "/DOutputDir=$outputDir" `
     "/DIconPath=$iconPath" `
